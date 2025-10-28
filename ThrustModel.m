@@ -4,22 +4,21 @@ if isempty(P3)
     P3 = 20;
 end
 
-tau = 5;
-
 P1 = ThrottleLever(dt);
 
 if P1 >= 50 && P3 >= 50
-    P1 = P1;
+    P2 = P1;
 elseif P1 >= 50 && P3 < 50
-    P1 = 60;
+    P2 = 60;
 elseif P1 < 50 && P3 >= 50
-    P1 = 40;
+    P2 = 40;
 else
-    P1 = P1;
+    P2 = P1;
 end
 
-P3dot = tau * (P1 - P3);
-P3=EulerIntegration(h,P3,P3dot);
+tau = ThrottlerRate(P2,P3);
+P3dot = tau * (P2 - P3);
+P3 = EulerIntegration(h,P3,P3dot);
 
 
 Mach = saturate(Mach,0.2,1);
@@ -34,10 +33,13 @@ end
 
 thrust = [T;0;0];
 thrust_moment = [0;0;0];
+% Moment ekle, açısal momentum falan da ekle
+
+
 end
 
 %%
-% gaz kolu
+% gaz kolu statik
 function P1 = ThrottleLever(dt)
 
 if dt <= 0.77
@@ -48,6 +50,27 @@ end
 
 end
 
+% gaz kolu dinamik
+function dt = ThrottlerRate(P1,P3)
+if P1 - P3 <= 25
+    timeConstant = 1;
+elseif 25 < P1 - P3 && P1 - P3 < 50
+    timeConstant = 0.1;
+else
+    timeConstant = 1.9 - 0.036*(P1 - P3);
+end
+
+if P1 >= 50 && P3 >= 50
+    dt = 5;
+elseif P1 >= 50 && P3 < 50
+    dt = timeConstant;
+elseif P1 < 50 && P3 >= 50
+    dt = 5;
+else
+    dt = timeConstant;
+end
+
+end
 % statik itki
 function [T1,T2,T3]= StaticThrust(alt,Mach)
 persistent h_tablo Mach_tablo X Y T_mil T_idle T_max
