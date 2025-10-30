@@ -1,5 +1,5 @@
 %% F-16 Aerodinamik Model
-function [aero,aero_moment,alfa,beta,TAS,pdin,Mach] = AeroModel(V,w,rho,Sref,b,c,de_der,da_der,dr_der,a)
+function [aero,aero_moment,alfa,beta,TAS,pdin,Mach] = AeroModel(V,w,rho,Sref,b,c,de_der,da_der,dr_der,a,Xref,Xcg)
 
 TAS = saturate(sqrt(V(1)^2 + V(2)^2 + V(3)^2),0.01,200);
 p = w(1);
@@ -25,7 +25,7 @@ Cn = Cn_hesapla(alfa_der,beta_der,da_der,dr_der,pnorm,rnorm);
 
 
 aero = [CX;CY;CZ]*pdin*Sref;
-aero_moment = [Cl * b;Cm * c;Cn * b]*pdin*Sref;
+aero_moment = [Cl * b;Cm * c;Cn * b]*pdin*Sref + cross((Xcg - Xref),aero);
 % Momente Cg değişimini de ekle
 
 

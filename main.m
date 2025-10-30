@@ -15,6 +15,8 @@ t = 0;
 dt_s = 0.001;
 
 X = [0;0;-5000];
+Xref = [0;0;0];
+Xcg = [0;0;0];
 u = X;
 eul = [0;0;0];
 alt_list = [];
@@ -32,7 +34,7 @@ while true
     alt = -X(3);
     [de_der, da_der, dr_der, dt_yuzde] = ControlSurfaceDeflections(joystick);
     [Talt,P,rho,a] = AtmosphereModel(alt);
-    [A,AM,alfa,beta,TAS,pdin,Mach] = AeroModel(V,w,rho,Sref,b,c,de_der,da_der,dr_der,a);
+    [A,AM,alfa,beta,TAS,pdin,Mach] = AeroModel(V,w,rho,Sref,b,c,de_der,da_der,dr_der,a,Xref,Xcg);
     [T,TM] = ThrustModel(dt_yuzde,dt_s,alt,Mach);
     [W,I] = WeightModel(dcm);
     F = T + A + W;
