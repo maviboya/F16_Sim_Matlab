@@ -25,7 +25,7 @@ Cn = Cn_hesapla(alfa_der,beta_der,da_der,dr_der,pnorm,rnorm);
 
 
 aero = [CX;CY;CZ]*pdin*Sref;
-aero_moment = [Cl * b;Cm * c;Cn * b]*pdin*Sref + cross((Xcg - Xref),aero);
+aero_moment = [Cl * b;Cm * c;Cn * b]*pdin*Sref + cross(Xref - Xcg, aero);
 % Momente Cg değişimini de ekle
 
 

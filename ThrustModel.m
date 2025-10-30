@@ -1,4 +1,4 @@
-function [thrust,thrust_moment] = ThrustModel(dt,h,alt,Mach)
+function [thrust,thrust_moment] = ThrustModel(dt,h,alt,Mach,Xeng,Xcg)
 persistent P3
 if isempty(P3)
     P3 = 20;
@@ -32,7 +32,7 @@ else
 end
 
 thrust = [T;0;0];
-thrust_moment = [0;0;0];
+thrust_moment = cross(Xeng - Xcg, thrust);
 % Moment ekle, açısal momentum falan da ekle
 
 
