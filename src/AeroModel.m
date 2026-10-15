@@ -1,16 +1,23 @@
-%% F-16 Aerodinamik Model
+%% F-16 aerodinamik modeli
 function [aero,aero_moment,alfa,beta,TAS,pdin,Mach] = AeroModel(V,w,rho,Sref,b,c,de_der,da_der,dr_der,a,Xref,Xcg)
-
-TAS = saturate(sqrt(V(1)^2 + V(2)^2 + V(3)^2),0.01,200);
+% AEROMODEL: V gövdeye göre hava hızı (m/s), w gövde açısal hızı (rad/s).
+% Yüzey açıları derece; geometri ve moment kolları metre cinsindendir.
+% Çıktı kuvveti N, momenti N*m; alfa/beta radyan cinsindendir.
+% Hız için üst sınır yoktur. Sıfıra bölünmeyi önlemek için yalnız 0,01 m/s
+% alt sınırı kullanılır; bu bölgede katsayı yorumu fiziksel olarak sınırlıdır.
+TAS = max(norm(V),0.01);
 p = w(1);
 q = w(2);
 r = w(3);
 alfa = atan2(V(3),V(1));
-beta = asin(V(2)/TAS);
+beta = asin(min(max(V(2)/TAS,-1),1));
 pdin = 0.5*rho*TAS^2;
 Mach = TAS / a;
-alfa_der = saturate(rad2deg(alfa),-10,45);
-beta_der = saturate(rad2deg(beta),-30,30);
+% Gerçek alfa/beta çıktıda korunur; yalnız katsayı tablolarına giren
+% derece değerleri mevcut veri zarfına kısılır.
+alfa_der = min(max(rad2deg(alfa),-10),45);
+beta_der = min(max(rad2deg(beta),-30),30);
+% Sönüm türevlerinin boyutsuz açısal hızları: pb/2V, qc/2V, rb/2V.
 pnorm = p * b / (2*TAS);
 qnorm = q * c / (2*TAS);
 rnorm = r * b / (2*TAS);
@@ -23,22 +30,19 @@ Cl = Cl_hesapla(alfa_der,beta_der,da_der,dr_der,pnorm,rnorm);
 Cm = Cm_hesapla(alfa_der,de_der,qnorm);
 Cn = Cn_hesapla(alfa_der,beta_der,da_der,dr_der,pnorm,rnorm);
 
-
+% Cx,Cy,Cz gövde ekseninde; Cl,Cm,Cn sırasıyla x,y,z moment katsayıları.
 aero = [CX;CY;CZ]*pdin*Sref;
+% Katsayılar Xref'e göre tanımlıdır; CG'ye aktarımda (Xref-Xcg)×F eklenir.
 aero_moment = [Cl * b;Cm * c;Cn * b]*pdin*Sref + cross(Xref - Xcg, aero);
-% Momente Cg değişimini de ekle
-
-
 end
 
-
 %% kuvvet fonksiyonları
-% CX
+% CX: satırlar hücum açısı, sütunlar elevatör açısıdır (derece).
 function CX = CX_hesapla(alfa,de,qnorm)
-persistent alfa_tablo de_tablo X Y CX_tablo CXq
+persistent alfa_tablo de_tablo CX_tablo CXq
 if isempty(alfa_tablo)
-    alfa_tablo = [-10	-5	0	5	10	15	20	25	30	35	40	45]';
-    de_tablo = [-24 -12 0 12 24]';
+    alfa_tablo = [-10	-5	0	5	10	15	20	25	30	35	40	45];
+    de_tablo = [-24 -12 0 12 24];
     CX_tablo = [-0.099	-0.048	-0.022	-0.040	-0.083
         -0.081	-0.038	-0.020	-0.038	-0.073
         -0.081	-0.040	-0.021	-0.039	-0.076
@@ -50,16 +54,16 @@ if isempty(alfa_tablo)
         0.145	0.162	0.154	0.100	0.043
         0.167	0.177	0.161	0.110	0.053
         0.174	0.179	0.155	0.104	0.047
-        0.166	0.167	0.138	0.091	0.040]';
+        0.166	0.167	0.138	0.091	0.040];
     CXq = [-0.267	-0.110	0.308	1.340	2.080	2.910	2.760	2.050	1.500	1.490	1.830	1.210]';
-    [X,Y] = meshgrid(alfa_tablo,de_tablo);
 end
 
-CX = interp2(X,Y,CX_tablo,alfa,de) + qnorm * interp1(alfa_tablo,CXq,alfa);
+% Temel katsayıya yunuslama hızı sönüm katkısını ekle.
+CX = interpn(alfa_tablo,de_tablo,CX_tablo,alfa,de) + qnorm * interp1(alfa_tablo,CXq,alfa);
 
 end
 
-% CY
+% CY: kayış ve yüzey etkileri doğrusal; p/r sönüm türevleri alfa tablosundan.
 function CY = CY_hesapla(alfa,beta,da,dr,pnorm,rnorm)
 
 persistent alfa_tablo CYp CYr
@@ -76,7 +80,7 @@ CY = -0.020 * beta + 0.021 * (da/20) + 0.086 * (dr/30) +...
 
 end
 
-% CZ
+% CZ: kayışın etkisinde beta kare terimi radyan, yüzey açıları derecedir.
 function CZ = CZ_hesapla(alfa,beta,de,qnorm)
 persistent alfa_tablo CZ_Tablo CZq
 if isempty(alfa_tablo)
@@ -91,8 +95,11 @@ CZ = interp1(alfa_tablo,CZ_Tablo,alfa) * (1 - deg2rad(beta)^2) - 0.19*(de/25) + 
 end
 
 %% moment fonksiyonları
-% Cl
+% Cl: temel kayış tablosu tek simetriyle genişletilir; kanatçık/dümen
+% katkıları sırasıyla 20° ve 30° referansına göre ölçeklenir.
 function Cl = Cl_hesapla(alfa,beta,da,dr,pnorm,rnorm)
+% Sayılar alfa satırı/beta sütunu olarak yazılmıştır; MATLAB interp2
+% ızgarasında beta satırı/alfa sütunu gerektiğinden tablolar çevrilir.
 persistent alfa_tablo beta_tablo beta_tablo2 X Y X2 Y2 Cl_tablo Clda_tablo Cldr_tablo Clp Clr
 if isempty(alfa_tablo)
     alfa_tablo = [-10	-5	0	5	10	15	20	25	30	35	40	45]';
@@ -123,18 +130,21 @@ if isempty(alfa_tablo)
         -0.027	-0.023	-0.018	-0.017	-0.016	-0.011	-0.007
         -0.017	-0.016	-0.014	-0.012	-0.011	-0.010	-0.008]';
 
-    Cldr_tablo = [0.005	0.005	0.007	0.005	0.018	0.015	0.015
-        0.017	0.000	0.016	0.000	0.015	0.013	0.014
-        0.014	-0.005	0.014	0.004	0.015	0.011	0.013
-        0.010	-0.011	0.014	0.009	0.014	0.013	0.013
-        -0.005	0.008	0.013	0.007	0.014	0.013	0.012
-        0.009	0.007	0.009	0.013	0.014	0.012	0.011
-        0.019	0.013	0.012	0.011	0.014	0.011	0.011
-        0.005	0.011	0.008	0.010	0.013	0.010	0.010
-        0.000	0.009	0.008	0.009	0.014	0.008	0.006
-        -0.005	0.014	0.008	0.010	0.014	0.005	0.014
-        -0.011	0.014	0.007	0.011	0.006	0.000	0.020
-        0.008	0.014	0.003	0.011	0.001	0.001	0.000]';
+    % Stevens Ek A.8 DLDR: 12 alfa satırı x 7 beta sütunu.
+    % Önceki Excel aktarımında 62 hücre kaymıştı; yayıncı verisiyle düzeltildi.
+    Cldr_tablo = [
+        0.005 0.007 0.013 0.018 0.015 0.021 0.023
+        0.017 0.016 0.013 0.015 0.014 0.011 0.010
+        0.014 0.014 0.011 0.015 0.013 0.010 0.011
+        0.010 0.014 0.012 0.014 0.013 0.011 0.011
+        -0.005 0.013 0.011 0.014 0.012 0.010 0.011
+        0.009 0.009 0.009 0.014 0.011 0.009 0.010
+        0.019 0.012 0.008 0.014 0.011 0.008 0.008
+        0.005 0.005 0.005 0.015 0.010 0.010 0.010
+        0.000 0.000 -0.002 0.013 0.008 0.006 0.006
+        -0.005 0.004 0.005 0.011 0.008 0.005 0.014
+        -0.011 0.009 0.003 0.006 0.007 0.000 0.020
+        0.008 0.007 0.005 0.001 0.003 0.001 0.000]';
 
     Clr = [-0.126	-0.026	0.063	0.113	0.208	0.230	0.319	0.437	0.680	0.100	0.447	-0.330]';
     Clp = [-0.360	-0.359	-0.443	-0.420	-0.383	-0.375	-0.329	-0.294	-0.230	-0.210	-0.120	-0.100]';
@@ -142,6 +152,7 @@ if isempty(alfa_tablo)
     [X2,Y2] = meshgrid(alfa_tablo,beta_tablo2);
 end
 
+% Temel Cl kayış açısından tek fonksiyondur: Cl(-beta)=-Cl(beta).
 Cl = interp2(X,Y,Cl_tablo,alfa,abs(beta))*sign(beta) +...
     interp2(X2,Y2,Clda_tablo,alfa,beta)*da/20 +...
     interp2(X2,Y2,Cldr_tablo,alfa,beta)*dr/30 +...
@@ -149,8 +160,9 @@ Cl = interp2(X,Y,Cl_tablo,alfa,abs(beta))*sign(beta) +...
 
 end
 
-% Cm
+% Cm: elevatör tablosu ±24°'de biter; çağıran model bu sınırı uygular.
 function Cm = Cm_hesapla(alfa,de,qnorm)
+% Tablo alfa satırı/elevatör sütunundan interp2 düzenine çevrilir.
 persistent alfa_tablo de_tablo X Y Cm_tablo Cmq
 if isempty(alfa_tablo)
     alfa_tablo = [-10	-5	0	5	10	15	20	25	30	35	40	45]';
@@ -175,8 +187,9 @@ Cm = interp2(X,Y,Cm_tablo,alfa,de) + qnorm * interp1(alfa_tablo,Cmq,alfa);
 
 end
 
-% Cn
+% Cn: temel kayış etkisi tek simetrili; yüzey ve p/r sönüm katkıları eklenir.
 function Cn = Cn_hesapla(alfa,beta,da,dr,pnorm,rnorm)
+% Cl ile aynı alfa/beta ızgara ve işaret sözleşmesi kullanılır.
 persistent alfa_tablo beta_tablo beta_tablo2 X Y X2 Y2 Cn_tablo Cnda_tablo Cndr_tablo Cnp Cnr
 if isempty(alfa_tablo)
     alfa_tablo = [-10	-5	0	5	10	15	20	25	30	35	40	45]';
@@ -194,18 +207,21 @@ if isempty(alfa_tablo)
         0.000	-0.014	-0.035	-0.046	-0.034	-0.012	0.015
         0.000	-0.017	-0.047	-0.071	-0.065	-0.002	0.011
         0.000	-0.033	-0.057	-0.073	-0.041	-0.013	-0.001]';
-    Cnda_tablo = [0.001	0.017	0.002	0.002	-0.006	0.007	-0.011
-        -0.027	0.011	-0.014	0.012	-0.008	0.004	-0.011
-        -0.017	0.017	-0.016	0.015	-0.006	0.007	-0.010
-        -0.013	0.008	-0.016	0.015	-0.006	0.006	-0.009
-        -0.012	0.016	-0.014	0.011	-0.005	0.006	-0.008
-        -0.016	0.002	-0.019	-0.008	-0.008	-0.006	-0.006
-        0.001	-0.014	-0.021	-0.006	-0.005	0.000	-0.010
-        0.017	-0.016	-0.006	-0.008	-0.008	0.004	-0.009
-        0.011	-0.016	-0.006	-0.006	-0.006	0.007	-0.009
-        0.017	-0.014	-0.005	-0.005	-0.005	0.010	-0.001
-        0.008	-0.019	-0.008	-0.008	-0.008	0.004	-0.002
-        0.016	-0.021	-0.006	-0.006	-0.006	0.010	0.001]';
+    % Stevens Ek A.8 DNDA: önceki aktarımda 67 hücre yanlış konumdaydı.
+    % Bağımsız referans: validation/references/stevens_appendix_tables.json.
+    Cnda_tablo = [
+        0.001 0.002 -0.006 -0.011 -0.015 -0.024 -0.022
+        -0.027 -0.014 -0.008 -0.011 -0.015 -0.010 0.002
+        -0.017 -0.016 -0.006 -0.010 -0.014 -0.004 -0.003
+        -0.013 -0.016 -0.006 -0.009 -0.012 -0.002 -0.005
+        -0.012 -0.014 -0.005 -0.008 -0.011 -0.001 -0.003
+        -0.016 -0.019 -0.008 -0.006 -0.008 0.003 -0.001
+        0.001 -0.021 -0.005 0.000 -0.002 0.014 -0.009
+        0.017 0.002 0.007 0.004 0.002 0.006 -0.009
+        0.011 0.012 0.004 0.007 0.006 -0.001 -0.001
+        0.017 0.015 0.007 0.010 0.012 0.004 0.003
+        0.008 0.015 0.006 0.004 0.011 0.004 -0.002
+        0.016 0.011 0.006 0.010 0.011 0.006 0.001]';
 
     Cndr_tablo = [-0.018	-0.028	-0.037	-0.048	-0.043	-0.052	-0.062
         -0.052	-0.051	-0.041	-0.045	-0.044	-0.034	-0.034
